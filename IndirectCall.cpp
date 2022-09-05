@@ -20,19 +20,31 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
         static std::uniform_int_distribution<std::mt19937::result_type> distribution(0xfffff, 0xffffffff);
 
         std::map<llvm::Function *, size_t> functions2key;
-        std::map<llvm::Function *, llvm::GlobalVariable *> functions2glob;
-        
+        std::map<llvm::Function *, size_t> functions2index;
+        std::vector<llvm::Constant *> globalFunctionArray;
+
         for (auto &F : M) {
             // for each function, replace it's use
             llvm::Function *function = &F;
             functions2key[function] = distribution(rng);
+
+            auto *funcPtr = llvm::ConstantExpr::getBitCast(function, llvm::Type::getInt8PtrTy(F.getContext()));
+            funcPtr = llvm::ConstantExpr::getPtrToInt(funcPtr, llvm::Type::getInt64Ty(F.getContext()), false);
+            funcPtr = llvm::ConstantExpr::getAdd(funcPtr, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2key[function]));
+
+            functions2index[function] = globalFunctionArray.size();
+            globalFunctionArray.push_back(funcPtr);
         }
-        replaceUse(M, functions2key, functions2glob);
+        auto *arrayType = llvm::ArrayType::get(llvm::Type::getInt64Ty(M.getContext()), globalFunctionArray.size());
+        auto *funcArray = llvm::ConstantArray::get(arrayType, llvm::ArrayRef<llvm::Constant *>(globalFunctionArray));
+        auto *globFuncArray = new llvm::GlobalVariable(M, arrayType, false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, funcArray, "");
+        replaceUse(M, functions2key, globFuncArray, functions2index);
 
         return llvm::PreservedAnalyses::all();
     }
 
-    void replaceUse(llvm::Module &M, std::map<llvm::Function *, size_t> &functions2key, std::map<llvm::Function *, llvm::GlobalVariable *> &functions2glob) {
+    void replaceUse(llvm::Module &M, std::map<llvm::Function *, size_t> &functions2key, llvm::GlobalVariable *globFuncArray, std::map<llvm::Function *, size_t> &functions2index) {
+        
         for (auto &F : M) {
             for (auto &BB : F) {
                 for (auto &instr : BB) {
@@ -43,24 +55,20 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
                         // get call instruction, check callee
                         if (auto *callee = callInstr->getCalledFunction()) {
                             // replace origin callee with array[idx]
-                            if (functions2glob.count(callee) == 0) {
-                                if (functions2key.count(callee) == 0) {
-                                    // no key
-                                    continue;
-                                }
-                                // key was generated, create new global variable now
-                                auto *funcPtr = llvm::ConstantExpr::getBitCast(callee, llvm::Type::getInt8PtrTy(F.getContext()));
-                                funcPtr = llvm::ConstantExpr::getPtrToInt(funcPtr, llvm::Type::getInt64Ty(F.getContext()), false);
-                                funcPtr = llvm::ConstantExpr::getAdd(funcPtr, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2key[callee]));
-                                funcPtr = llvm::ConstantExpr::getIntToPtr(funcPtr, llvm::PointerType::get(callee->getFunctionType(), 0));
-                                auto *newGlob = new llvm::GlobalVariable(M, llvm::PointerType::get(callee->getFunctionType(), 0), false, llvm::GlobalValue::LinkageTypes::PrivateLinkage,
-                                                                         funcPtr, "");
-                                functions2glob[callee] = newGlob;
+                            // if (functions2glob.count(callee) == 0) {
+                            if (functions2key.count(callee) == 0) {
+                                // no key
+                                continue;
                             }
-                            // replace the functions with newGlob
                             llvm::IRBuilder<> builder(callInstr);
-                            auto *func = builder.CreateLoad(llvm::PointerType::get(callee->getFunctionType(), 0), functions2glob[callee]);
-                            auto *funcPtrInt = builder.CreatePtrToInt(func, llvm::Type::getInt64Ty(F.getContext()));
+
+                            auto *indexGlob = new llvm::GlobalVariable(M, llvm::Type::getInt64Ty(F.getContext()), false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2index[callee] * 8), "");
+
+                            auto *arrayStart = builder.CreatePointerCast(globFuncArray, llvm::Type::getInt64Ty(F.getContext()));
+                            auto *index = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), indexGlob);
+                            auto *funcArrayPtrInt = builder.CreateAdd(arrayStart, index);
+                            auto *funcArrayPtr = builder.CreateIntToPtr(funcArrayPtrInt, llvm::Type::getInt64PtrTy(F.getContext()));
+                            auto *funcPtrInt = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), funcArrayPtr);
                             auto *funcPtrIntVal = builder.CreateSub(funcPtrInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2key[callee]));
                             auto *funcPtr = builder.CreateIntToPtr(funcPtrIntVal, llvm::PointerType::get(callee->getFunctionType(), 0));
                             callInstr->replaceUsesOfWith(callee, funcPtr);
