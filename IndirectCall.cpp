@@ -55,7 +55,6 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
                         // get call instruction, check callee
                         if (auto *callee = callInstr->getCalledFunction()) {
                             // replace origin callee with array[idx]
-                            // if (functions2glob.count(callee) == 0) {
                             if (functions2key.count(callee) == 0) {
                                 // no key
                                 continue;
