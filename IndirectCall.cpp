@@ -62,7 +62,6 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
                             llvm::IRBuilder<> builder(callInstr);
 
                             auto *indexGlob = new llvm::GlobalVariable(M, llvm::Type::getInt64Ty(F.getContext()), false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2index[callee] * 8), "");
-
                             auto *arrayStart = builder.CreatePointerCast(globFuncArray, llvm::Type::getInt64Ty(F.getContext()));
                             auto *index = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), indexGlob);
                             auto *funcArrayPtrInt = builder.CreateAdd(arrayStart, index);
