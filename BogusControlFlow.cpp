@@ -75,7 +75,7 @@ struct BogusControlFlow : llvm::PassInfoMixin<BogusControlFlow> {
         }
 
         for (auto bptr : blocks) {
-            createBogusFlow(M, F, bptr, allocaCandidates);
+            createBogusFlow(M, F, bptr, candidates);
         }
     }
 
@@ -146,7 +146,11 @@ struct BogusControlFlow : llvm::PassInfoMixin<BogusControlFlow> {
         return condition;
     }
 
-    void createBogusFlow(llvm::Module &M, llvm::Function &F, llvm::BasicBlock *b, std::vector<llvm::AllocaInst *> &allocaCandidates) {
+    void createBogusFlow(llvm::Module &M, llvm::Function &F, llvm::BasicBlock *b, std::vector<llvm::BasicBlock *> &jmpCandidates) {
+        static std::random_device dev;
+        static std::mt19937 rng(dev());
+        std::uniform_int_distribution<std::mt19937::result_type> dist(0, 0xfffff);
+
         // split the block
         auto in = b->getFirstNonPHIOrDbgOrLifetime();
         auto bb = b->splitBasicBlock(in);
@@ -161,8 +165,14 @@ struct BogusControlFlow : llvm::PassInfoMixin<BogusControlFlow> {
         cloneBB->getTerminator()->eraseFromParent();
 
         auto *condition = createComparison(M, F, b);
-        llvm::BranchInst::Create(bb, cloneBB, condition, b);
-        llvm::BranchInst::Create(bb, cloneBB);
+
+        if (dist(rng) > 0xfffff / 3 || jmpCandidates.size() == 0) {
+            llvm::BranchInst::Create(bb, cloneBB, condition, b);
+            llvm::BranchInst::Create(bb, cloneBB);
+        } else {
+            llvm::BranchInst::Create(bb, jmpCandidates[dist(rng) % jmpCandidates.size()], condition, b);
+            llvm::BranchInst::Create(jmpCandidates[dist(rng) % jmpCandidates.size()], cloneBB);
+        }
 
         auto instr2 = bb->end();
         auto bp2 = bb->splitBasicBlock(--instr2);
