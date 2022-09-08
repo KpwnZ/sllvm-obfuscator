@@ -166,13 +166,8 @@ struct BogusControlFlow : llvm::PassInfoMixin<BogusControlFlow> {
 
         auto *condition = createComparison(M, F, b);
 
-        if (dist(rng) > 0xfffff / 3 || jmpCandidates.size() == 0) {
-            llvm::BranchInst::Create(bb, cloneBB, condition, b);
-            llvm::BranchInst::Create(bb, cloneBB);
-        } else {
-            llvm::BranchInst::Create(bb, jmpCandidates[dist(rng) % jmpCandidates.size()], condition, b);
-            llvm::BranchInst::Create(jmpCandidates[dist(rng) % jmpCandidates.size()], cloneBB);
-        }
+        llvm::BranchInst::Create(bb, cloneBB, condition, b);
+        llvm::BranchInst::Create(bb, cloneBB);
 
         auto instr2 = bb->end();
         auto bp2 = bb->splitBasicBlock(--instr2);
