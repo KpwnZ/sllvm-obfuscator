@@ -6,6 +6,7 @@ add_llvm_component_library(LLVMSLLVM_OBF
   InstructionObf.cpp
   StringObf.cpp
   IndirectCall.cpp
+  Flatten.cpp
   
   DEPENDS
   intrinsics_gen
