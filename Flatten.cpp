@@ -177,6 +177,7 @@ struct Flatten : llvm::PassInfoMixin<Flatten> {
         }
 
         demotePhi(F);
+        while(fixValue(F)) { };
     }
 
     void demotePhi(llvm::Function &F) {
@@ -200,6 +201,32 @@ struct Flatten : llvm::PassInfoMixin<Flatten> {
         }
 
         return;
+    }
+
+    size_t fixValue(llvm::Function &F) {
+
+        // fix "Instruction does not dominate all uses"
+
+        std::vector<llvm::Instruction *> alloca;
+
+        for (auto && BB : F) {
+            for (auto &i : BB) {
+                if (isa<llvm::AllocaInst>(&i) || i.getParent() == &F.getEntryBlock()) {
+                    continue;
+                }
+                if (i.isUsedOutsideOfBlock(&BB)) {
+                    alloca.push_back(&i);
+                }
+            }
+        }
+        if (!alloca.size()) return 0;
+        
+        for (auto *i : alloca) {
+            llvm::DemoteRegToStack(*i, false, F.begin()->getTerminator());
+        }
+
+        return alloca.size();
+
     }
 };
 
