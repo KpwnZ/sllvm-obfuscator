@@ -6,9 +6,11 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/Local.h"
 
 static llvm::cl::opt<bool> DebugFlatten(
     "dbg-flatten", llvm::cl::init(false),
@@ -173,6 +175,31 @@ struct Flatten : llvm::PassInfoMixin<Flatten> {
         if (DebugFlatten) {
             llvm::errs() << "done\n";
         }
+
+        demotePhi(F);
+    }
+
+    void demotePhi(llvm::Function &F) {
+        
+        // flattening will break the order relation between basic block
+        // but phi instruction depends on its precursor
+        // so we need to demote phi node to stack 
+
+        std::vector<llvm::PHINode *> phi;
+
+        for (auto &BB : F) {
+            for (auto &i : BB) {
+                if (auto *p = dyn_cast<llvm::PHINode>(&i)) {
+                    phi.push_back(p);
+                }
+            }
+        }
+
+        for (auto *i : phi) {
+            llvm::DemotePHIToStack(i, F.begin()->getTerminator());
+        }
+
+        return;
     }
 };
 
