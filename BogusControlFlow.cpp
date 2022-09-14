@@ -13,7 +13,7 @@
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
-static llvm::cl::opt<int> bcfIt("bcf-iteration", llvm::cl::init(3), llvm::cl::desc("run bcf for x[=3] times"));
+static llvm::cl::opt<int> bcfIt("bcf-iteration", llvm::cl::init(1), llvm::cl::desc("run bcf for x[=1] times"));
 
 namespace sllvm {
 
