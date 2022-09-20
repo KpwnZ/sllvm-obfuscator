@@ -10,6 +10,7 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Local.h"
 
 namespace sllvm {
 
@@ -45,54 +46,51 @@ struct IndirectBranch : llvm::PassInfoMixin<IndirectBranch> {
         return llvm::PreservedAnalyses::all();
     }
 
-    void replaceUse(llvm::Module &M, std::map<llvm::BasicBlock *, size_t> &blocks2key, llvm::GlobalVariable *globBlockArray, std::map<llvm::BasicBlock *, size_t> &functions2index) {
+    void replaceUse(llvm::Module &M, 
+                    std::map<llvm::BasicBlock *, size_t> &blocks2key, 
+                    llvm::GlobalVariable *globBlockArray, 
+                    std::map<llvm::BasicBlock *, size_t> &functions2index) {
         for (auto &F : M) {
             for (auto &BB : F) {
-                std::vector<llvm::BranchInst *> list;
-                for (auto &instr : BB) {
-                    if (auto *branchInstr = dyn_cast<llvm::BranchInst>(&instr)) {
-                        if (isa<llvm::IntrinsicInst>(&instr)) {
-                            continue;
+                auto *instr = BB.getTerminator();
+                if (auto *branchInstr = dyn_cast<llvm::BranchInst>(instr)) {
+                    auto num = branchInstr->getNumSuccessors();
+                    std::vector<llvm::Value *> successorAddress;
+                    llvm::IndirectBrInst *idr = nullptr;
+                    for (unsigned int i = 0; i < num; ++i) {
+                        llvm::BasicBlock *b = branchInstr->getSuccessor(i);
+                        if (blocks2key.count(b) == 0) {
+                            goto nextiter;
                         }
-                        auto num = branchInstr->getNumSuccessors();
-                        std::vector<llvm::Value *> successorAddress;
-                        llvm::IndirectBrInst *idr = nullptr;
-                        for (unsigned int i = 0; i < num; ++i) {
-                            llvm::BasicBlock *b = branchInstr->getSuccessor(i);
-                            if (blocks2key.count(b) == 0) {
-                                goto nextiter;
-                            }
-                            llvm::IRBuilder<> builder(branchInstr);
-
-                            auto *indexGlob = new llvm::GlobalVariable(M, llvm::Type::getInt64Ty(F.getContext()), false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2index[b] * 8), "");
-                            auto *arrayStart = builder.CreatePointerCast(globBlockArray, llvm::Type::getInt64Ty(F.getContext()));
-                            auto *index = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), indexGlob);
-                            auto *blockArrayPtrInt = builder.CreateAdd(arrayStart, index);
-                            auto *blockArrayPtr = builder.CreateIntToPtr(blockArrayPtrInt, llvm::Type::getInt64PtrTy(F.getContext()));
-                            auto *blockPtrInt = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), blockArrayPtr);
-                            auto *blockPtrIntVal = builder.CreateSub(blockPtrInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), blocks2key[b]));
-                            auto *blockPtr = builder.CreateIntToPtr(blockPtrIntVal, llvm::Type::getInt8PtrTy(F.getContext()));
-                            successorAddress.push_back(blockPtr);
-                        }
-                        list.push_back(branchInstr);
-                        if (successorAddress.size() == 1) {
-                            llvm::IRBuilder<> builder(branchInstr);
-                            idr = builder.CreateIndirectBr(successorAddress[0], 1);
-                        } else if (successorAddress.size() > 1) {
-                            llvm::IRBuilder<> builder(branchInstr);
-                            auto *select = builder.CreateSelect(branchInstr->getCondition(), successorAddress[0], successorAddress[1]);
-                            idr = builder.CreateIndirectBr(select, 1);
-                        }
-                        if (idr) {
-                            for (unsigned int i = 0; i < num; ++i) {
-                                idr->addDestination(branchInstr->getSuccessor(i));
-                            }
-                        }
-                    nextiter:
-                        continue;
+                        llvm::IRBuilder<> builder(branchInstr);
+                        
+                        auto *indexGlob = new llvm::GlobalVariable(M, llvm::Type::getInt64Ty(F.getContext()), false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2index[b] * 8), "");
+                        auto *arrayStart = builder.CreatePointerCast(globBlockArray, llvm::Type::getInt64Ty(F.getContext()));
+                        auto *index = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), indexGlob);
+                        auto *blockArrayPtrInt = builder.CreateAdd(arrayStart, index);
+                        auto *blockArrayPtr = builder.CreateIntToPtr(blockArrayPtrInt, llvm::Type::getInt64PtrTy(F.getContext()));
+                        auto *blockPtrInt = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), blockArrayPtr);
+                        auto *blockPtrIntVal = builder.CreateSub(blockPtrInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), blocks2key[b]));
+                        auto *blockPtr = builder.CreateIntToPtr(blockPtrIntVal, llvm::Type::getInt8PtrTy(F.getContext()));
+                        successorAddress.push_back(blockPtr);
                     }
+                    
+                    if (successorAddress.size() == 1) {
+                        llvm::IRBuilder<> builder(branchInstr);
+                        idr = builder.CreateIndirectBr(successorAddress[0], 1);
+                    } else if (branchInstr->isConditional()) {
+                        llvm::IRBuilder<> builder(branchInstr);
+                        auto *select = builder.CreateSelect(branchInstr->getCondition(), successorAddress[0], successorAddress[1]);
+                        idr = builder.CreateIndirectBr(select, 2);
+                    }
+                    for (unsigned int i = 0; i < num; ++i) {
+                        idr->addDestination(branchInstr->getSuccessor(i));
+                    }
+                    
+                    branchInstr->eraseFromParent();
+                nextiter:
+                    continue;
                 }
-                for (auto *i : list) i->removeFromParent();
             }
         }
     }
