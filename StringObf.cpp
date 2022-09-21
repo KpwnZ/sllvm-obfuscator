@@ -24,8 +24,8 @@ public:
         : enc(v1), key(v2), glob(g) { }
     GlobalStringVariable(std::vector<uint8_t> &v1, std::vector<uint8_t> &v2, llvm::GlobalVariable *g, llvm::Instruction *i) 
         : enc(v1), key(v2), glob(g), referInstruction(i) { }
-    GlobalStringVariable(std::vector<uint8_t> &v1, std::vector<uint8_t> &v2, llvm::GlobalVariable *g, llvm::Instruction *i, std::vector<uint8_t> &buf) 
-        : enc(v1), key(v2), glob(g), referInstruction(i), str(buf) { }
+    GlobalStringVariable(std::vector<uint8_t> &v1, std::vector<uint8_t> &v2, llvm::GlobalVariable *g, llvm::Instruction *i, std::vector<uint8_t> &buf)
+        : enc(v1), key(v2), str(buf), glob(g), referInstruction(i) { }
     llvm::GlobalVariable *getGlob() { return glob; }
     std::vector<uint8_t> &getEnc()  { return enc;  }
     std::vector<uint8_t> &getKey()  { return key;  }
@@ -183,7 +183,7 @@ struct StringObf : llvm::PassInfoMixin<StringObf> {
                 processed.insert(glob);
                 key_glob = new llvm::GlobalVariable(
                     M,
-                    glob->getType()->getElementType(),
+                    glob->getType()->getPointerElementType(),
                     false, 
                     glob->getLinkage(),
                     nullptr, 
