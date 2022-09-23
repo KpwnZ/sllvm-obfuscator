@@ -49,7 +49,7 @@ struct IndirectBranch : llvm::PassInfoMixin<IndirectBranch> {
     void replaceUse(llvm::Module &M, 
                     std::map<llvm::BasicBlock *, size_t> &blocks2key, 
                     llvm::GlobalVariable *globBlockArray, 
-                    std::map<llvm::BasicBlock *, size_t> &functions2index) {
+                    std::map<llvm::BasicBlock *, size_t> &blocks2index) {
         for (auto &F : M) {
             for (auto &BB : F) {
                 auto *instr = BB.getTerminator();
@@ -64,7 +64,7 @@ struct IndirectBranch : llvm::PassInfoMixin<IndirectBranch> {
                         }
                         llvm::IRBuilder<> builder(branchInstr);
                         
-                        auto *indexGlob = new llvm::GlobalVariable(M, llvm::Type::getInt64Ty(F.getContext()), false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2index[b] * 8), "");
+                        auto *indexGlob = new llvm::GlobalVariable(M, llvm::Type::getInt64Ty(F.getContext()), false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), blocks2index[b] * 8), "");
                         auto *arrayStart = builder.CreatePointerCast(globBlockArray, llvm::Type::getInt64Ty(F.getContext()));
                         auto *index = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), indexGlob);
                         auto *blockArrayPtrInt = builder.CreateAdd(arrayStart, index);
