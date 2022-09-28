@@ -14,6 +14,9 @@
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
 static llvm::cl::opt<int> bcfIt("bcf-iteration", llvm::cl::init(1), llvm::cl::desc("run bcf for x[=1] times"));
+static llvm::cl::opt<bool> DebugBcf(
+    "dbg-bcf", llvm::cl::init(false),
+    llvm::cl::desc("Debug bcf pass"));
 
 namespace sllvm {
 
@@ -42,7 +45,7 @@ struct BogusControlFlow : llvm::PassInfoMixin<BogusControlFlow> {
     llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM) {
         std::vector<llvm::BasicBlock *> blocks;
 
-        llvm::errs() << "run bcf for " << M.getName() << "\n";
+        if (DebugBcf) llvm::errs() << "run bcf for " << M.getName() << "\n";
         for(int i = 0; i < bcfIt; ++i) {
             for (auto &F : M) {
                 handleFunction(M, F);
