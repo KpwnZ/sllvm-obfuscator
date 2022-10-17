@@ -80,18 +80,6 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
 
 }
 
-extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
-llvmGetPassPluginInfo() {
-    return {
-        LLVM_PLUGIN_API_VERSION, "IndirectCall", LLVM_VERSION_STRING, [](llvm::PassBuilder &PB) {
-            PB.registerPipelineParsingCallback(
-                [](llvm::StringRef Name, llvm::ModulePassManager &MPM,
-                   llvm::ArrayRef<llvm::PassBuilder::PipelineElement>) {
-                    if (Name == "indircall") {
-                        MPM.addPass(sllvm::IndirectCall());
-                        return true;
-                    }
-                    return false;
-                });
-        }};
+extern "C" void buildIndirectCall(llvm::ModulePassManager &MPM) {
+    MPM.addPass(sllvm::IndirectCall());
 }

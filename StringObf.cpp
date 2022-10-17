@@ -222,19 +222,6 @@ struct StringObf : llvm::PassInfoMixin<StringObf> {
 
 }
 
-extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
-llvmGetPassPluginInfo() {
-    return {
-        LLVM_PLUGIN_API_VERSION, "StringObf", LLVM_VERSION_STRING, [](llvm::PassBuilder &PB) {
-            PB.registerPipelineParsingCallback(
-                [](llvm::StringRef Name, llvm::ModulePassManager &MPM,
-                                         llvm::ArrayRef<llvm::PassBuilder::PipelineElement>) {
-                if (Name == "stringobf") {
-                    MPM.addPass(sllvm::StringObf());
-                    return true;
-                }
-                return false;
-            });
-        }
-    };
+extern "C" void buildStringObf(llvm::ModulePassManager &MPM) {
+    MPM.addPass(sllvm::StringObf());
 }

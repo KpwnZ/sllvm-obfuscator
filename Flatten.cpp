@@ -219,6 +219,7 @@ struct Flatten : llvm::PassInfoMixin<Flatten> {
                 }
             }
         }
+        
         if (!alloca.size()) return 0;
         
         for (auto *i : alloca) {
@@ -232,18 +233,6 @@ struct Flatten : llvm::PassInfoMixin<Flatten> {
 
 }
 
-extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
-llvmGetPassPluginInfo() {
-    return {
-        LLVM_PLUGIN_API_VERSION, "Flatten", LLVM_VERSION_STRING, [](llvm::PassBuilder &PB) {
-            PB.registerPipelineParsingCallback(
-                [](llvm::StringRef Name, llvm::ModulePassManager &MPM,
-                   llvm::ArrayRef<llvm::PassBuilder::PipelineElement>) {
-                    if (Name == "flatten") {
-                        MPM.addPass(sllvm::Flatten());
-                        return true;
-                    }
-                    return false;
-                });
-        }};
+extern "C" void buildFlatten(llvm::ModulePassManager &MPM) {
+    MPM.addPass(sllvm::Flatten());
 }

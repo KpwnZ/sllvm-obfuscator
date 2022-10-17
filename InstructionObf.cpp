@@ -139,18 +139,6 @@ struct InstructionObf : llvm::PassInfoMixin<InstructionObf> {
 
 }  // namespace sllvm
 
-extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
-llvmGetPassPluginInfo() {
-    return {
-        LLVM_PLUGIN_API_VERSION, "InstructionObf", LLVM_VERSION_STRING, [](llvm::PassBuilder &PB) {
-            PB.registerPipelineParsingCallback(
-                [](llvm::StringRef Name, llvm::ModulePassManager &FPM,
-                   llvm::ArrayRef<llvm::PassBuilder::PipelineElement>) {
-                    if (Name == "instrobf") {
-                        FPM.addPass(sllvm::InstructionObf());
-                        return true;
-                    }
-                    return false;
-                });
-        }};
+extern "C" void buildInstructionObf(llvm::ModulePassManager &MPM) {
+    MPM.addPass(sllvm::InstructionObf());
 }
