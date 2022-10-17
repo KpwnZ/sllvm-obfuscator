@@ -12,6 +12,7 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
+#include "llvm/IR/Dominators.h"
 
 static llvm::cl::opt<int> bcfIt("bcf-iteration", llvm::cl::init(1), llvm::cl::desc("run bcf for x[=1] times"));
 static llvm::cl::opt<bool> DebugBcf(
@@ -41,15 +42,16 @@ static const uint32_t prime_array[] = {
 };
 
 struct BogusControlFlow : llvm::PassInfoMixin<BogusControlFlow> {
+    bool firstObfIteration = true;
 
     llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM) {
-        std::vector<llvm::BasicBlock *> blocks;
 
         if (DebugBcf) llvm::errs() << "run bcf for " << M.getName() << "\n";
         for(int i = 0; i < bcfIt; ++i) {
             for (auto &F : M) {
                 handleFunction(M, F);
             }
+            firstObfIteration = false;
         }
 
         return llvm::PreservedAnalyses::all();
@@ -64,7 +66,7 @@ struct BogusControlFlow : llvm::PassInfoMixin<BogusControlFlow> {
         std::vector<llvm::AllocaInst *> allocaCandidates;
 
         for (auto &BB : F) {
-            blocks.push_back(&BB);
+            if (&BB != &F.getEntryBlock()) blocks.push_back(&BB);
         }
 
         for (auto &BB : F) {
@@ -149,37 +151,85 @@ struct BogusControlFlow : llvm::PassInfoMixin<BogusControlFlow> {
         return condition;
     }
 
+    llvm::BasicBlock *selectBlock(std::vector<llvm::BasicBlock *> &candidates) {
+        static std::random_device dev;
+        static std::mt19937 rng;
+        std::uniform_int_distribution<std::mt19937::result_type> dist(0, 0xfffff);
+
+        return candidates[dist(rng) % candidates.size()];
+    }
+
+    void collectCandidates(llvm::BasicBlock *insertAtEnd, llvm::BasicBlock *cloneBB, std::vector<llvm::BasicBlock *> &jmp, llvm::DominatorTree &dt) {
+        // in order to keep the domination of the instruction
+        for (auto it = pred_begin(insertAtEnd), endit = pred_end(insertAtEnd); it != endit; ++it) {
+            llvm::BasicBlock *predecessor = *it;
+
+            llvm::BranchInst *inst = dyn_cast<llvm::BranchInst>(predecessor->getTerminator());
+            if (!inst) continue;
+
+            for (unsigned int i = 0; i < inst->getNumSuccessors(); ++i) {
+                if (inst->getSuccessor(i) != insertAtEnd) {
+                    auto *commonDominator = dt.findNearestCommonDominator(inst->getSuccessor(i), insertAtEnd);
+                    if (commonDominator == predecessor) 
+                        jmp.push_back(inst->getSuccessor(i));
+                }
+            }
+        }
+        jmp.push_back(cloneBB);
+    }
+
     void createBogusFlow(llvm::Module &M, llvm::Function &F, llvm::BasicBlock *b, std::vector<llvm::BasicBlock *> &jmpCandidates) {
+        std::vector<llvm::BasicBlock *> jmp;
         static std::random_device dev;
         static std::mt19937 rng(dev());
         std::uniform_int_distribution<std::mt19937::result_type> dist(0, 0xfffff);
 
+        llvm::DominatorTree dt(F);
+        collectCandidates(b, nullptr, jmp, dt);
+        
         // split the block
         auto in = b->getFirstNonPHIOrDbgOrLifetime();
         auto bb = b->splitBasicBlock(in);
 
-        // create a fake block
-        llvm::BasicBlock *cloneBB = nullptr;
-        buildFakeBlock(bb, &cloneBB);
-        assert(cloneBB != nullptr);
-
-        // remove terminator from cloneBB and b
+        // remove terminator from b
         b->getTerminator()->eraseFromParent();
-        cloneBB->getTerminator()->eraseFromParent();
 
         auto *condition = createComparison(M, F, b);
-
-        llvm::BranchInst::Create(bb, cloneBB, condition, b);
-        llvm::BranchInst::Create(bb, cloneBB);
+        auto *candidate_block = selectBlock(jmp);
+        llvm::BasicBlock *cloneBB = nullptr;
+        
+        if (candidate_block == nullptr || !firstObfIteration) {
+            // create a fake block
+            buildFakeBlock(bb, &cloneBB);
+            cloneBB->getTerminator()->eraseFromParent();
+            assert(cloneBB != nullptr);
+            llvm::BranchInst::Create(bb, cloneBB);
+            llvm::BranchInst::Create(bb, cloneBB, condition, b);
+        } else {
+            llvm::BranchInst::Create(bb, candidate_block, condition, b);  // jump to random block
+            for (auto &instr : *candidate_block) {
+                if (auto *p = dyn_cast<llvm::PHINode>(&instr)) {
+                    if (p->getBasicBlockIndex(b) == -1) {
+                        p->addIncoming(p->getIncomingValue(0), b);
+                    }
+                }
+            }
+            for (auto &instr : *bb) {
+                if (auto *p = dyn_cast<llvm::PHINode>(&instr)) {
+                    if (p->getBasicBlockIndex(b) == -1) {
+                        p->addIncoming(p->getIncomingValue(0), b);
+                    }
+                }
+            }
+        }
 
         auto instr2 = bb->end();
         auto bp2 = bb->splitBasicBlock(--instr2);
-
         bb->getTerminator()->eraseFromParent();
         
-        // auto *condition2 = new llvm::FCmpInst(*bb, llvm::FCmpInst::FCMP_TRUE, LHS, RHS);
         auto *condition2 = createComparison(M, F, bb);
-        llvm::BranchInst::Create(bp2, cloneBB, condition2, bb);
+        if (candidate_block != nullptr) llvm::BranchInst::Create(bp2, bb, condition2, bb);
+        else llvm::BranchInst::Create(bp2, cloneBB, condition2, bb);
     }
 
     void buildFakeBlock(llvm::BasicBlock *target, llvm::BasicBlock **block) {
