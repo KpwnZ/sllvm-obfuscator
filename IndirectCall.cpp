@@ -26,6 +26,7 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
         for (auto &F : M) {
             // for each function, replace it's use
             llvm::Function *function = &F;
+            if (function->isIntrinsic()) continue;
             functions2key[function] = distribution(rng);
 
             auto *funcPtr = llvm::ConstantExpr::getBitCast(function, llvm::Type::getInt8PtrTy(F.getContext()));
