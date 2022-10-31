@@ -13,11 +13,19 @@
 namespace sllvm {
 
 struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
+    llvm::Type *largestIntType;
+    int largestIntSize;
 
     llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM) {
+        auto datalayout = llvm::DataLayout(&M);
+        largestIntType = datalayout.getLargestLegalIntType(M.getContext());
+        assert(largestIntType != nullptr);
+        largestIntSize = datalayout.getTypeStoreSize(largestIntType);
+        assert(largestIntSize != 0);
+
         static std::random_device device;
         static std::mt19937 rng(device());
-        static std::uniform_int_distribution<std::mt19937::result_type> distribution(0xfffff, 0xffffffff);
+        static std::uniform_int_distribution<std::mt19937::result_type> distribution(0x100, 0xfffff);
 
         std::map<llvm::Function *, size_t> functions2key;
         std::map<llvm::Function *, size_t> functions2index;
@@ -36,7 +44,7 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
             functions2index[function] = globalFunctionArray.size();
             globalFunctionArray.push_back(funcPtr);
         }
-        auto *arrayType = llvm::ArrayType::get(llvm::Type::getInt64Ty(M.getContext()), globalFunctionArray.size());
+        auto *arrayType = llvm::ArrayType::get(largestIntType, globalFunctionArray.size());
         auto *funcArray = llvm::ConstantArray::get(arrayType, llvm::ArrayRef<llvm::Constant *>(globalFunctionArray));
         auto *globFuncArray = new llvm::GlobalVariable(M, arrayType, false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, funcArray, "");
         replaceUse(M, functions2key, globFuncArray, functions2index);
@@ -45,7 +53,6 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
     }
 
     void replaceUse(llvm::Module &M, std::map<llvm::Function *, size_t> &functions2key, llvm::GlobalVariable *globFuncArray, std::map<llvm::Function *, size_t> &functions2index) {
-        
         for (auto &F : M) {
             for (auto &BB : F) {
                 for (auto &instr : BB) {
@@ -62,13 +69,13 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
                             }
                             llvm::IRBuilder<> builder(callInstr);
 
-                            auto *indexGlob = new llvm::GlobalVariable(M, llvm::Type::getInt64Ty(F.getContext()), false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2index[callee] * 8), "");
-                            auto *arrayStart = builder.CreatePointerCast(globFuncArray, llvm::Type::getInt64Ty(F.getContext()));
-                            auto *index = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), indexGlob);
+                            auto *indexGlob = new llvm::GlobalVariable(M, largestIntType, false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, llvm::ConstantInt::get(largestIntType, functions2index[callee] * largestIntSize), "");
+                            auto *arrayStart = builder.CreatePointerCast(globFuncArray, largestIntType);
+                            auto *index = builder.CreateLoad(largestIntType, indexGlob);
                             auto *funcArrayPtrInt = builder.CreateAdd(arrayStart, index);
-                            auto *funcArrayPtr = builder.CreateIntToPtr(funcArrayPtrInt, llvm::Type::getInt64PtrTy(F.getContext()));
-                            auto *funcPtrInt = builder.CreateLoad(llvm::Type::getInt64Ty(F.getContext()), funcArrayPtr);
-                            auto *funcPtrIntVal = builder.CreateSub(funcPtrInt, llvm::ConstantInt::get(llvm::Type::getInt64Ty(F.getContext()), functions2key[callee]));
+                            auto *funcArrayPtr = builder.CreateIntToPtr(funcArrayPtrInt, largestIntType);
+                            auto *funcPtrInt = builder.CreateLoad(largestIntType, funcArrayPtr);
+                            auto *funcPtrIntVal = builder.CreateSub(funcPtrInt, llvm::ConstantInt::get(largestIntType, functions2key[callee]));
                             auto *funcPtr = builder.CreateIntToPtr(funcPtrIntVal, llvm::PointerType::get(callee->getFunctionType(), 0));
                             callInstr->replaceUsesOfWith(callee, funcPtr);
                         }
@@ -79,7 +86,7 @@ struct IndirectCall : llvm::PassInfoMixin<IndirectCall> {
     }
 };
 
-}
+}  // namespace sllvm
 
 extern "C" void buildIndirectCall(llvm::ModulePassManager &MPM) {
     MPM.addPass(sllvm::IndirectCall());
