@@ -61,7 +61,7 @@ struct IndirectBranch : llvm::PassInfoMixin<IndirectBranch> {
         }
         auto *arrayType = llvm::ArrayType::get(largestIntType, globalBlocksArray.size());
         auto *bArray = llvm::ConstantArray::get(arrayType, llvm::ArrayRef<llvm::Constant *>(globalBlocksArray));
-        auto *globBlockArray = new llvm::GlobalVariable(M, arrayType, false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, bArray, "");
+        auto *globBlockArray = new llvm::GlobalVariable(M, arrayType, false, llvm::GlobalValue::LinkageTypes::ExternalWeakLinkage, bArray, "");
         replaceUse(M, blocks2key, globBlockArray, blocks2index);
 
         return llvm::PreservedAnalyses::all();
