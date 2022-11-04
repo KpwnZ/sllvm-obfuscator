@@ -84,8 +84,8 @@ struct IndirectBranch : llvm::PassInfoMixin<IndirectBranch> {
                             goto nextiter;
                         }
                         llvm::IRBuilder<> builder(branchInstr);
-                        
-                        auto *indexGlob = new llvm::GlobalVariable(M, largestIntType, false, llvm::GlobalValue::LinkageTypes::PrivateLinkage, llvm::ConstantInt::get(largestIntType, blocks2index[b] * 8), "");
+
+                        auto *indexGlob = new llvm::GlobalVariable(M, largestIntType, false, llvm::GlobalValue::LinkageTypes::ExternalWeakLinkage, llvm::ConstantInt::get(largestIntType, blocks2index[b] * 8), "");
                         auto *arrayStart = builder.CreatePointerCast(globBlockArray, largestIntType);
                         auto *index = builder.CreateLoad(largestIntType, indexGlob);
                         auto *blockArrayPtrInt = builder.CreateAdd(arrayStart, index);
