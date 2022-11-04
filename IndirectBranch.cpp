@@ -17,13 +17,16 @@ namespace sllvm {
 
 struct IndirectBranch : llvm::PassInfoMixin<IndirectBranch> {
     llvm::Type *largestIntType;
+    int largestIntSize;
     
     llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM) {
 
         auto datalayout = llvm::DataLayout(&M);
         largestIntType = datalayout.getLargestLegalIntType(M.getContext());
         assert(largestIntType != nullptr);
-        
+        largestIntSize = datalayout.getTypeStoreSize(largestIntType);
+        assert(largestIntSize != 0);
+
         static std::random_device device;
         static std::mt19937 rng(device());
         static std::uniform_int_distribution<std::mt19937::result_type> distribution(0x100, 0xfffff);
@@ -85,7 +88,7 @@ struct IndirectBranch : llvm::PassInfoMixin<IndirectBranch> {
                         }
                         llvm::IRBuilder<> builder(branchInstr);
 
-                        auto *indexGlob = new llvm::GlobalVariable(M, largestIntType, false, llvm::GlobalValue::LinkageTypes::ExternalWeakLinkage, llvm::ConstantInt::get(largestIntType, blocks2index[b] * 8), "");
+                        auto *indexGlob = new llvm::GlobalVariable(M, largestIntType, false, llvm::GlobalValue::LinkageTypes::ExternalWeakLinkage, llvm::ConstantInt::get(largestIntType, blocks2index[b] * largestIntSize), "");
                         auto *arrayStart = builder.CreatePointerCast(globBlockArray, largestIntType);
                         auto *index = builder.CreateLoad(largestIntType, indexGlob);
                         auto *blockArrayPtrInt = builder.CreateAdd(arrayStart, index);
