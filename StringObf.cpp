@@ -10,6 +10,10 @@
 #include <set>
 #include <map>
 
+static llvm::cl::opt<bool> DebugStringObf(
+    "dbg-stringobf", llvm::cl::init(false),
+    llvm::cl::desc("Debug string obfuscation pass"));
+    
 namespace sllvm {
 
 class GlobalStringVariable {
@@ -86,7 +90,7 @@ struct StringObf : llvm::PassInfoMixin<StringObf> {
         std::set<llvm::GlobalVariable *> processed;
         std::map<llvm::GlobalVariable *, llvm::GlobalVariable *> mapEnc2Key;
         for(auto &F : M) {
-            llvm::errs() << "run string obfuscation for " << F.getName() << "\n";
+            if (DebugStringObf) llvm::errs() << "run string obfuscation for " << F.getName() << "\n";
             processFunction(F, M, processed, mapEnc2Key);
         }
         return llvm::PreservedAnalyses::all();
